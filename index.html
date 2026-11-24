@@ -52,7 +52,8 @@
 (() => {
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
-const W=960,H=600, tileW=64,tileH=32;\n// Canvas coordinates remain fixed; CSS scales the game cleanly on phones and desktops.
+const W=960,H=600, tileW=64,tileH=32;
+// Canvas coordinates remain fixed; CSS scales the game cleanly on phones and desktops.
 const origin={x:480,y:270};
 const iso=(x,y,z=0)=>({x:origin.x+(x-y)*tileW/2,y:origin.y+(x+y)*tileH/2-z});
 const colors=['#f97316','#38bdf8','#c084fc','#a3e635'];
