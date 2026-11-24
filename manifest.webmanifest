@@ -1,0 +1,9 @@
+{
+  "name": "Minik Oda — Pixel World",
+  "short_name": "Minik Oda",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "description": "İzometrik pixel art oda ve dolaşan karakterler."
+}

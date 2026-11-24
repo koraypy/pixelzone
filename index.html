@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Minik Oda — Pixel World</title>
+<meta name="theme-color" content="#111827">
+<meta name="description" content="Küçük bir izometrik pixel art oda ve kendi halinde dolaşan karakterler.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#111827;color:#e5e7eb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;min-height:100svh;display:grid;place-items:center;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .shell{width:min(1100px,100%);padding:clamp(10px,2.5vw,18px)}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 12px}
+  h1{font-size:18px;margin:0;letter-spacing:.04em}
+  .sub{font-size:12px;color:#9ca3af;margin-top:3px}
+  .pill{font-size:11px;color:#c7d2fe;background:#312e81;border:1px solid #4f46e5;padding:6px 10px;border-radius:99px}
+  .stage{position:relative;width:100%;background:#182235;border:1px solid #334155;border-radius:16px;overflow:hidden;box-shadow:0 22px 70px #0008;touch-action:pan-y}
+  canvas{display:block;width:100%;height:auto;aspect-ratio:8/5;image-rendering:pixelated}
+  .hud{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 2px;color:#9ca3af;font-size:12px;flex-wrap:wrap}
+  .people{display:flex;gap:8px;flex-wrap:wrap}
+  .person{display:flex;align-items:center;gap:6px;background:#1f2937;border:1px solid #374151;padding:6px 9px;border-radius:9px}
+  .dot{width:9px;height:9px;border-radius:2px}
+  button{background:#4f46e5;color:white;border:0;border-radius:9px;padding:10px 13px;min-height:40px;font-weight:650;cursor:pointer;touch-action:manipulation}
+  button:hover{background:#6366f1}
+  .hint{color:#64748b}
+@media(max-width:640px){
+  body{display:block}
+  .shell{padding:12px 10px}
+  header{align-items:flex-start}
+  h1{font-size:16px}
+  .pill{font-size:9px;padding:5px 7px;white-space:nowrap}
+  .sub{font-size:11px;max-width:230px}
+  .stage{border-radius:10px}
+  .hud{align-items:flex-start;flex-direction:column;padding:10px 2px}
+  .hud>div:last-child{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .hint{width:100%}
+  button{padding:9px 11px}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header><div><h1>MINIK ODA <span style="color:#818cf8">/ PIXEL WORLD</span></h1><div class="sub">Küçük bir izometrik oda ve kendi halinde dolaşan sakinleri</div></div><span class="pill">3D İZOMETRİK • PIXEL ART</span></header>
+  <div class="stage"><canvas id="game" width="960" height="600" aria-label="İzometrik oda ve dolaşan karakterler"></canvas></div>
+  <div class="hud"><div class="people" id="people"></div><div><span class="hint">Karakterler odayı rastgele keşfediyor.</span> &nbsp; <button id="pause">Duraklat</button> <button id="reset">Yeniden başlat</button></div></div>
+</div>
+<script>
+(() => {
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+const W=960,H=600, tileW=64,tileH=32;\n// Canvas coordinates remain fixed; CSS scales the game cleanly on phones and desktops.
+const origin={x:480,y:270};
+const iso=(x,y,z=0)=>({x:origin.x+(x-y)*tileW/2,y:origin.y+(x+y)*tileH/2-z});
+const colors=['#f97316','#38bdf8','#c084fc','#a3e635'];
+const names=['Miso','Piko','Luna','Tobi'];
+const chars=names.map((name,i)=>({name,x:1.2+(i%2)*2.3,y:1.1+Math.floor(i/2)*2.1,tx:1,ty:1,dir:1,step:0,wait:Math.random()*2,color:colors[i],skin:['#f2c9a5','#d9a47e','#f0c5a2','#b97d5c'][i],bob:Math.random()*6}));
+let paused=false,last=0,elapsed=0;
+document.getElementById('people').innerHTML=chars.map(c=>`<span class="person"><i class="dot" style="background:${c.color}"></i>${c.name}</span>`).join('');
+function poly(points,fill,stroke='#263449'){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function line(x1,y1,x2,y2,c='#273449',w=2){ctx.strokeStyle=c;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}
+function drawFloor(){
+  const a=iso(0,0),b=iso(8,0),c=iso(8,6),d=iso(0,6);
+  poly([a,b,c,d],'#b7a58d','#756b60');
+  for(let x=0;x<8;x++)for(let y=0;y<6;y++){
+    const p=iso(x,y),q=iso(x+1,y),r=iso(x+1,y+1),s=iso(x,y+1);
+    poly([p,q,r,s],(x+y)%2?'#c8b69b':'#d2c1a7','#b6a58e');
+    if((x*3+y*5)%7===0){const k=iso(x+.5,y+.5);rect(k.x-2,k.y-1,4,2,'#b4a188')}
+  }
+}
+function wall(){
+  const A=iso(0,0),B=iso(8,0),D=iso(0,6);
+  const top=115;
+  poly([{x:A.x,y:A.y},{x:B.x,y:B.y},{x:B.x,y:top},{x:A.x,y:top}],'#7f91aa','#526176');
+  poly([{x:A.x,y:A.y},{x:D.x,y:D.y},{x:D.x,y:top+96},{x:A.x,y:top}],'#64758e','#46566c');
+  // wallpaper panels
+  for(let i=0;i<8;i++){let x=A.x+i*32;line(x,top+5,x,top+145,'#91a0b4',1)}
+  for(let i=0;i<5;i++)line(A.x,top+30+i*28,B.x,top+30+i*28,'#91a0b4',1);
+  // window on back wall
+  rect(540,145,132,82,'#344b68');rect(548,153,116,66,'#9bd4df');rect(604,153,5,66,'#56758a');rect(548,184,116,5,'#56758a');
+  rect(558,162,22,14,'#d8f1e7');rect(624,194,26,14,'#d8f1e7');
+  // framed art on left wall
+  poly([{x:286,y:171},{x:367,y:211},{x:367,y:281},{x:286,y:241}],'#4c3e52','#354052');
+  poly([{x:294,y:179},{x:359,y:211},{x:359,y:271},{x:294,y:239}],'#f4bd75','#fff0c2');
+  poly([{x:300,y:231},{x:323,y:195},{x:352,y:244}],'#4c9b82','#4c9b82');
+}
+function shadow(x,y,rx,ry){ctx.fillStyle='#17203333';ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
+function furniture(){
+  // rug
+  let p=[iso(2,2),iso(5.3,2),iso(5.3,4.2),iso(2,4.2)];poly(p,'#8f718b','#6d536c');
+  let p2=[iso(2.25,2.25),iso(5.05,2.25),iso(5.05,3.95),iso(2.25,3.95)];poly(p2,'#bd91a9','#9d718b');
+  // sofa, back and seat
+  let s=iso(1.0,2.0);shadow(s.x+16,s.y+12,66,20);
+  poly([iso(.5,1.2,25),iso(3.1,1.2,25),iso(3.1,1.2,0),iso(.5,1.2,0)],'#557c8b','#385b6b');
+  poly([iso(.5,1.2),iso(3.1,1.2),iso(3.1,2.0),iso(.5,2.0)],'#78a8ad','#426c77');
+  poly([iso(.5,2),iso(3.1,2),iso(3.1,2.45),iso(.5,2.45)],'#4d7481','#385b6b');
+  // cushions
+  poly([iso(.8,1.55,9),iso(1.7,1.55,9),iso(1.7,1.95,9),iso(.8,1.95,9)],'#e7b18c','#b77d69');
+  poly([iso(1.9,1.55,9),iso(2.8,1.55,9),iso(2.8,1.95,9),iso(1.9,1.95,9)],'#d6c3ed','#9b83bd');
+  // coffee table
+  let t=iso(4.4,3.0);shadow(t.x,t.y+10,45,15);
+  poly([iso(3.5,2.5,22),iso(5.1,2.5,22),iso(5.1,3.5,22),iso(3.5,3.5,22)],'#9b6749','#68452f');
+  poly([iso(3.5,2.5,22),iso(5.1,2.5,22),iso(5.1,3.5,22),iso(3.5,3.5,22)],'#c28a60','#805b43');
+  for(const [x,y] of [[3.65,2.65],[4.95,2.65],[3.65,3.35],[4.95,3.35]]){let k=iso(x,y,0);line(k.x,k.y,k.x,k.y+28,'#68452f',4)}
+  // plant in corner
+  let pl=iso(6.9,.8);shadow(pl.x,pl.y+10,24,9);
+  poly([iso(6.5,.4),iso(7.3,.4),iso(7.3,1.2),iso(6.5,1.2)],'#bd7954','#80513d');
+  rect(pl.x-5,pl.y-24,10,24,'#4b875c');rect(pl.x-17,pl.y-34,12,16,'#63a66d');rect(pl.x+5,pl.y-39,13,19,'#76b978');rect(pl.x-2,pl.y-47,10,17,'#4e9a68');
+  // floor lamp
+  let l=iso(7.1,4.8);line(l.x,l.y-2,l.x,l.y-91,'#46536a',5);poly([{x:l.x-22,y:l.y-88},{x:l.x+22,y:l.y-88},{x:l.x+14,y:l.y-113},{x:l.x-14,y:l.y-113}],'#f4cf83','#a78a54');shadow(l.x,l.y+3,20,7);
+  // bookshelf on back wall
+  rect(720,190,96,90,'#805b45');rect(728,198,80,76,'#b27b52');rect(728,222,80,5,'#714c3c');rect(728,248,80,5,'#714c3c');
+  [['#e7a65f',733,202],['#7bb6b1',745,202],['#c77b83',758,202],['#e4d08d',773,202],['#8a9bd1',789,202],['#c58d68',736,228],['#9dc28d',750,228],['#d8a3c6',764,228],['#e6bc77',780,228]].forEach(([c,x,y])=>rect(x,y,9,19,c));
+}
+function character(c){
+  const p=iso(c.x,c.y);let bob=Math.sin(c.bob)*2,step=Math.sin(c.step)*2;
+  shadow(p.x,p.y+2,13,6);
+  // feet
+  rect(p.x-8,p.y-9+step,7,8,'#30394d');rect(p.x+2,p.y-9-step,7,8,'#30394d');
+  // body / arms
+  rect(p.x-10,p.y-28+bob,20,20,c.color);rect(p.x-13,p.y-25+bob,5,13,c.skin);rect(p.x+8,p.y-25+bob,5,13,c.skin);
+  // head
+  rect(p.x-9,p.y-47+bob,18,18,c.skin);rect(p.x-10,p.y-48+bob,20,7,'#493b3b');
+  rect(p.x-7,p.y-39+bob,3,3,'#263044');rect(p.x+4,p.y-39+bob,3,3,'#263044');
+  rect(p.x-3,p.y-32+bob,6,2,'#a45f5a');
+  // tiny name tag
+  ctx.font='bold 10px ui-sans-serif';ctx.textAlign='center';ctx.fillStyle='#253044';ctx.fillText(c.name,p.x,p.y-57+bob);
+}
+function decor(){
+  // wall skirting and floor details
+  line(iso(0,6).x,iso(0,6).y,iso(8,6).x,iso(8,6).y,'#665e58',4);
+  // small wall clock
+  ctx.fillStyle='#f1dfbd';ctx.beginPath();ctx.arc(433,166,17,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#705c4b';ctx.lineWidth=3;ctx.stroke();line(433,166,433,155,'#705c4b',2);line(433,166,442,170,'#705c4b',2);
+}
+function update(dt){
+ for(const c of chars){
+   c.wait-=dt;c.bob+=dt*5;
+   if(c.wait<=0){
+     const dx=c.tx-c.x,dy=c.ty-c.y,d=Math.hypot(dx,dy);
+     if(d<.08){c.tx=.55+Math.random()*6.9;c.ty=.55+Math.random()*4.9;c.wait=.3+Math.random()*1.3;}
+     else {let v=Math.min(d,dt*(.45+Math.random()*.02));c.x+=dx/d*v;c.y+=dy/d*v;c.step+=dt*13;}
+   }
+ }
+}
+function render(){
+ ctx.clearRect(0,0,W,H);
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#24344d');g.addColorStop(1,'#172337');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // subtle background dots
+ for(let i=0;i<45;i++){let x=(i*197)%W,y=(i*83)%H;rect(x,y,2,2,'#ffffff12')}
+ drawFloor();wall();decor();furniture();
+ [...chars].sort((a,b)=>(a.x+a.y)-(b.x+b.y)).forEach(character);
+ // room title plaque
+ rect(24,24,160,38,'#111c2dcc');ctx.strokeStyle='#64748b';ctx.strokeRect(24,24,160,38);
+ ctx.font='bold 12px ui-sans-serif';ctx.fillStyle='#e2e8f0';ctx.textAlign='left';ctx.fillText('ODA 01  /  EVDE',38,47);
+}
+function loop(t){let dt=Math.min((t-last)/1000||0,.04);last=t;if(!paused)update(dt);render();requestAnimationFrame(loop)}
+document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Devam et':'Duraklat'};
+document.getElementById('reset').onclick=()=>{chars.forEach((c,i)=>{c.x=1.2+(i%2)*2.3;c.y=1.1+Math.floor(i/2)*2.1;c.tx=.6+Math.random()*6.8;c.ty=.6+Math.random()*4.8;c.wait=0})};
+document.addEventListener('visibilitychange',()=>{if(document.hidden){paused=true;document.getElementById('pause').textContent='Devam et'}});
+document.addEventListener('keydown',e=>{if(e.code==='Space' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)){e.preventDefault();paused=!paused;document.getElementById('pause').textContent=paused?'Devam et':'Duraklat'}});
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
