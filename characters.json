@@ -1,4 +1,7 @@
 {
+  "seed": 2026,
+  "server": "",
+  "stage": { "w": 1280, "h": 720 },
   "maxCharacters": 4,
   "characters": []
 }

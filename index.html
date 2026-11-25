@@ -5,20 +5,16 @@
 <style>
 :root{color-scheme:dark;--bg:#0d0b12;--fg:#e8dcc0}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;font:13px Georgia,serif}
-canvas{position:fixed;inset:0;width:100%;height:100%;image-rendering:pixelated}
-#bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px);background:linear-gradient(transparent,#000a)}
-#bar span{background:#1f1a2b;border:1px solid #4a4160;border-radius:8px;padding:5px 9px}
-#bar button{margin-left:auto;background:#6b4fd8;color:#fff;border:0;border-radius:8px;padding:9px 13px;font:inherit;font-weight:700}
+canvas{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,calc(100vh * var(--ar)));aspect-ratio:var(--ar);height:auto;image-rendering:pixelated}
 #msg{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:12px;opacity:.8}
 </style></head><body>
 <canvas id="c"></canvas><div id="msg"></div>
-<div id="bar"><div id="names" style="display:contents"></div><button id="pause">Duraklat</button></div>
 <script>
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),msg=document.getElementById('msg');
 const W=22,H=16,TW=64,TH=32,U=34;
-let vw,vh;
-function resize(){const d=devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*d;cv.height=vh*d;ctx.setTransform(d,0,0,d,0,0)}
-addEventListener('resize',resize);resize();
+const ASSETS={sprites:[],server:''};
+let SW=1280,SH=720,SEED=2026,NOW=0,curT=0; // sahne boyutu herkes için sabit
+function applyStage(){cv.width=SW;cv.height=SH;document.documentElement.style.setProperty('--ar',SW+'/'+SH)}
 const P=(x,y,z=0)=>[(x-y)*TW/2,(x+y)*TH/2-z*U];
 function poly(pts,fill,stroke){ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}}
 function box(x,y,w,d,h,z0,top,left,right){
@@ -35,7 +31,7 @@ add(9.9,7.9,2.2,2.2,()=>{box(9.8,7.8,2.4,2.4,.6,0,'#9fb0b8','#6f7f87','#5d6c73')
 for(const [sx,sy] of [[1.5,13.5],[20.5,13.5],[1.5,2.5],[20.5,2.5]])add(sx-.45,sy-.45,.9,.9,()=>{box(sx-.5,sy-.5,1,1,.7,0,'#8a8a92','#62626a','#52525a');box(sx-.25,sy-.25,.5,.5,1.6,.7,'#b5b5bd','#85858d','#72727a');box(sx-.2,sy-.2,.4,.4,.4,2.3,'#c5c5cd','#95959d','#82828a')});
 for(const [bx,by] of [[3.5,3.5],[18.5,3.5],[7,13],[15,13]]){braz.push([bx,by]);add(bx-.3,by-.3,.6,.6,()=>{
   box(bx-.3,by-.3,.6,.6,.9,0,'#3b3b42','#26262c','#1f1f24');
-  const t=performance.now()/120+bx,c=P(bx,by,1.1);
+  const t=NOW/120+bx,c=P(bx,by,1.1);
   ctx.fillStyle='#ff8a1f';ctx.beginPath();ctx.ellipse(c[0],c[1]-8,9,14+3*Math.sin(t),0,0,7);ctx.fill();
   ctx.fillStyle='#ffe27a';ctx.beginPath();ctx.ellipse(c[0],c[1]-4,4,8,0,0,7);ctx.fill()})}
 add(.2,6,1.2,2.4,()=>box(.2,6,1.2,2.4,.7,0,'#6b4423','#4a2e16','#3b2411'));
@@ -65,7 +61,6 @@ function findPath(sx,sy,tx,ty){
   const path=[];for(let n=e;n!==-1;n=prev[n])path.push([(n%CW+.5)*CS,((n/CW|0)+.5)*CS]);
   return path.reverse().slice(1);
 }
-function randomFree(){let n;do{n=(Math.random()*free.length)|0}while(!free[n]);return[n%CW,(n/CW)|0]}
 // ---- Karakter yükleme ----
 const loadImg=src=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=src});
 const loadScript=src=>new Promise(r=>{const s=document.createElement('script');s.src=src;s.onload=()=>r(true);s.onerror=()=>r(false);document.head.appendChild(s)});
@@ -73,40 +68,49 @@ async function buildRoster(){
   const roster=[];let max=4;
   try{
     const m=await (await fetch('characters.json',{cache:'no-cache'})).json();
-    if(m.maxCharacters)max=m.maxCharacters;
+    if(m.maxCharacters)max=m.maxCharacters;if(m.server)ASSETS.server=m.server;if(m.seed!=null)SEED=m.seed;if(m.stage){SW=m.stage.w;SH=m.stage.h}
     for(const d of m.characters||[]){
       const img=await loadImg(d.image);
       if(!img){console.warn('Görsel yüklenemedi:',d.image);continue}
       const fw=d.frameW||img.width,fh=d.frameH||img.height,cols=d.cols||Math.floor(img.width/fw),rows=Math.max(1,Math.floor(img.height/fh));
       roster.push({name:d.name||'?',sprite:{img,fw,fh,cols,rows,scale:d.scale||1}});
     }
+    ASSETS.sprites=roster.map(r=>r.sprite);
   }catch(e){msg.textContent='characters.json okunamadı (yerelde bir sunucu üzerinden aç).'}
   if(roster.length<max&&await loadScript('builtin-characters.js')&&window.BUILTIN_CHARACTERS)
     for(const b of BUILTIN_CHARACTERS){if(roster.length>=max)break;roster.push({name:b.name,builtin:b})}
   return roster.slice(0,max);
 }
 let chars=[];
-function spawn(def){
-  const [i,j]=randomFree();
-  return{...def,x:(i+.5)*CS,y:(j+.5)*CS,path:[],wait:Math.random()*2,face:{back:false,sx:0,dir:0},moving:false,t:Math.random()*10};
+// ---- Ortak dünya: konum, (karakter, zaman dilimi) çiftinin saf fonksiyonu ----
+// Aynı seed + aynı karakter listesi + aynı saat = herkes için birebir aynı görüntü.
+const SLOT=24,SPEED=1.7,MAXWALK=18;
+function rng(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function seedOf(ci,k,s){let h=SEED^Math.imul(ci+1,0x85EBCA6B)^Math.imul(k+7,0xC2B2AE35)^Math.imul(s+3,0x27D4EB2F);h^=h>>>15;h=Math.imul(h,0x2C1B3C6D);h^=h>>>12;return h|0}
+function cellAt(ci,k){const r=rng(seedOf(ci,k,1));let n;do{n=(r()*free.length)|0}while(!free[n]);return[n%CW,(n/CW)|0]}
+const legs=new Map();
+function leg(ci,k){
+  const key=ci+':'+k;let L=legs.get(key);if(L)return L;
+  const [a,b]=cellAt(ci,k-1),[c,d]=cellAt(ci,k);
+  const pts=[[(a+.5)*CS,(b+.5)*CS],...(findPath(a,b,c,d)||[])],cum=[0];
+  for(let i=1;i<pts.length;i++){const dx=pts[i][0]-pts[i-1][0],dy=pts[i][1]-pts[i-1][1];cum.push(cum[i-1]+Math.sqrt(dx*dx+dy*dy))}
+  const len=cum[cum.length-1],T=Math.min(Math.max(len/SPEED,.001),MAXWALK);
+  L={pts,cum,len,T,delay:rng(seedOf(ci,k,2))()*(SLOT-T)};
+  legs.set(key,L);if(legs.size>400)legs.delete(legs.keys().next().value);return L;
 }
-function update(dt){
-  for(const c of chars){
-    c.t+=dt;c.moving=false;
-    if(!c.path.length){
-      c.wait-=dt;if(c.wait>0)continue;
-      const [ti,tj]=randomFree();c.path=findPath(cellOf(c.x),cellOf(c.y),ti,tj)||[];c.wait=1+Math.random()*3;continue;
-    }
-    const [tx,ty]=c.path[0],dx=tx-c.x,dy=ty-c.y,d=Math.hypot(dx,dy),step=1.7*dt;
-    if(d<=step){c.x=tx;c.y=ty;c.path.shift()}else{c.x+=dx/d*step;c.y+=dy/d*step}
-    c.moving=true;
-    const sx=dx-dy,sy=dx+dy; // ekran yönü
-    c.face.back=sy<0;c.face.sx=Math.abs(sx)>Math.abs(sy)*.6?Math.sign(sx):0;
-    c.face.dir=Math.abs(sx)>Math.abs(sy)?(sx<0?1:2):(sy<0?3:0);
-  }
+function place(c,ci,T){
+  const k=Math.floor(T/SLOT),loc=T-k*SLOT,L=leg(ci,k),n=L.pts.length;c.t=T;
+  if(n<2){c.x=L.pts[0][0];c.y=L.pts[0][1];c.moving=false;return}
+  const d=Math.min(1,Math.max(0,(loc-L.delay)/L.T))*L.len;c.moving=loc>L.delay&&loc<L.delay+L.T;
+  let i=1;while(i<n-1&&L.cum[i]<d)i++;
+  const p=L.pts[i-1],q=L.pts[i],u=Math.min(1,Math.max(0,(d-L.cum[i-1])/((L.cum[i]-L.cum[i-1])||1)));
+  c.x=p[0]+(q[0]-p[0])*u;c.y=p[1]+(q[1]-p[1])*u;
+  const dx=q[0]-p[0],dy=q[1]-p[1],sx=dx-dy,sy=dx+dy;
+  c.face.back=sy<0;c.face.sx=Math.abs(sx)>Math.abs(sy)*.6?Math.sign(sx):0;
+  c.face.dir=Math.abs(sx)>Math.abs(sy)?(sx<0?1:2):(sy<0?3:0);
 }
 function drawChar(c){
-  const p=P(c.x,c.y);
+  const p=P(c.x,c.y);ctx.globalAlpha=c.joinedAt?Math.max(0,Math.min(1,(curT*1000-c.joinedAt)/800)):1;
   ctx.fillStyle='rgba(0,0,0,.4)';ctx.beginPath();ctx.ellipse(p[0],p[1],12,6,0,0,7);ctx.fill();
   ctx.save();ctx.translate(p[0],p[1]);
   if(c.builtin)c.builtin.draw(ctx,c.t,c.face,c.moving);
@@ -116,38 +120,75 @@ function drawChar(c){
   }
   ctx.restore();
   ctx.font='bold 11px Georgia';ctx.textAlign='center';ctx.fillStyle='#fff';ctx.strokeStyle='#000a';ctx.lineWidth=3;
-  const ny=p[1]-(c.sprite?c.sprite.fh*c.sprite.scale:52)-6;ctx.strokeText(c.name,p[0],ny);ctx.fillText(c.name,p[0],ny);
+  const ny=p[1]-(c.sprite?c.sprite.fh*c.sprite.scale:52)-6;ctx.strokeText(c.name,p[0],ny);ctx.fillText(c.name,p[0],ny);ctx.globalAlpha=1;
 }
+function wrap(s,mw){const out=[];let cur='';for(const ch of s){if(ctx.measureText(cur+ch).width>mw&&cur){out.push(cur);cur=ch.trim()?ch:''}else cur+=ch}if(cur)out.push(cur);if(out.length>3){out.length=3;out[2]=out[2].slice(0,-1)+'…'}return out}
+function drawBubble(c){
+  const b=c.bubble;if(!b||curT>b.until)return;
+  const p=P(c.x,c.y),bottom=p[1]-(c.sprite?c.sprite.fh*c.sprite.scale:52)-22;
+  ctx.font='12px Georgia';const L=wrap(b.text,150),w=Math.max(...L.map(l=>ctx.measureText(l).width))+14,h=L.length*15+10,x=p[0]-w/2,y=bottom-h;
+  ctx.globalAlpha=Math.min(1,(b.until-curT)/.5);ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(x,y,w,h,8);ctx.fill();
+  ctx.beginPath();ctx.moveTo(p[0]-5,y+h);ctx.lineTo(p[0]+5,y+h);ctx.lineTo(p[0],y+h+7);ctx.fill();
+  ctx.fillStyle='#111';ctx.textAlign='center';L.forEach((l,i)=>ctx.fillText(l,p[0],y+14+i*15));ctx.globalAlpha=1;
+}
+// ---- Canlı bağlantı (sunucu varsa): karakterler izleyicilerden gelir, saat sunucudan ----
+let offset=0,bestRtt=1e9,ws=null;const byId=new Map();
+const nowT=()=>(Date.now()+offset)/1000;
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h|0}
+const FALLBACK={draw(c,t,f,m){c.fillStyle='#8a8aa0';c.fillRect(-9,-30,18,20);c.fillRect(-7,-46,14,14);c.fillRect(-7,-10,5,10);c.fillRect(2,-10,5,10)}};
+function makeDef(u){
+  const d={id:u.id,name:u.name,h:hashStr(u.id),joinedAt:u.joinedAt,bubble:null,x:0,y:0,t:0,moving:false,face:{back:false,sx:0,dir:0}};
+  if(ASSETS.sprites.length)d.sprite=ASSETS.sprites[Math.abs(u.look|0)%ASSETS.sprites.length];
+  else d.builtin=window.makeRandomBuiltin?makeRandomBuiltin(u.look|0,u.name):FALLBACK;
+  return d;
+}
+function setChat(m){const c=byId.get(m.id);if(c)c.bubble={text:m.text,until:m.t/1000+6}}
+function handle(m){
+  if(m.type==='hello'){SEED=m.seed;legs.clear();offset=m.t-Date.now();byId.clear();m.roster.forEach(u=>byId.set(u.id,makeDef(u)));m.chats.forEach(setChat)}
+  else if(m.type==='join'){byId.set(m.user.id,makeDef(m.user))}
+  else if(m.type==='leave'){byId.delete(m.id)}
+  else if(m.type==='chat'){setChat(m)}
+  else if(m.type==='pong'){const rtt=Date.now()-m.c;if(rtt<=bestRtt){bestRtt=rtt;offset=m.t+rtt/2-Date.now()}}
+  else if(m.type==='gift'){console.log('gift',m)} // bağış → eylem entegrasyonu için hazır nokta
+  if(m.type!=='pong'&&m.type!=='gift')chars=[...byId.values()];
+}
+function connect(){
+  const url=new URLSearchParams(location.search).get('server')||ASSETS.server;if(!url)return;
+  try{ws=new WebSocket(url)}catch(e){return}
+  ws.onopen=()=>{bestRtt=1e9;ws.send(JSON.stringify({type:'ping',c:Date.now()}))};
+  ws.onmessage=e=>{try{handle(JSON.parse(e.data))}catch(err){console.warn(err)}};
+  ws.onclose=()=>setTimeout(connect,3000);
+}
+setInterval(()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'ping',c:Date.now()}))},10000);
 function drawRoom(){
   for(let x=0;x<W;x++)for(let y=0;y<H;y++)poly([P(x,y),P(x+1,y),P(x+1,y+1),P(x,y+1)],(x+y)%2?'#b9b2a3':'#8f897d','rgba(0,0,0,.12)');
   poly([P(8.5,2.6),P(13.5,2.6),P(13.5,H),P(8.5,H)],'#8a1c2b');poly([P(8.7,2.6),P(13.3,2.6),P(13.3,H),P(8.7,H)],'#a42436');
   poly([P(8.5,2.6),P(8.7,2.6),P(8.7,H),P(8.5,H)],'#c9a227');poly([P(13.3,2.6),P(13.5,2.6),P(13.5,H),P(13.3,H)],'#c9a227');
-  const WH=4.6,g=.5+.1*Math.sin(performance.now()/900);
+  const WH=4.6,g=.5+.1*Math.sin(NOW/900);
   poly([P(0,0,0),P(W,0,0),P(W,0,WH),P(0,0,WH)],'#4b4558','#2a2634');poly([P(0,0,0),P(0,H,0),P(0,H,WH),P(0,0,WH)],'#3d3849','#2a2634');
   for(const wx of [3,6,16,19])poly([P(wx-.7,0,1.4),P(wx+.7,0,1.4),P(wx+.7,0,3.9),P(wx-.7,0,3.9)],`rgba(120,160,230,${g})`,'#c9a227');
   for(const wy of [3,6,9.5,13])poly([P(0,wy-.7,1.4),P(0,wy+.7,1.4),P(0,wy+.7,3.9),P(0,wy-.7,3.9)],`rgba(120,160,230,${g})`,'#c9a227');
   for(const bx of [7.5,14.5])poly([P(bx-.4,0,1.2),P(bx+.4,0,1.2),P(bx+.4,0,4.2),P(bx,0,3.7),P(bx-.4,0,4.2)],'#8a1c2b','#c9a227');
   poly([P(0,H,0),P(W,H,0),P(W,H,.25),P(0,H,.25)],'#5a5468');poly([P(W,0,0),P(W,H,0),P(W,H,.25),P(W,0,.25)],'#5a5468');
 }
-let paused=false,last=performance.now();
-function frame(t){
-  const dt=Math.min(.05,(t-last)/1000);last=t;if(!paused)update(dt);
-  ctx.fillStyle='#0d0b12';ctx.fillRect(0,0,vw,vh);
-  // tüm salonu ekrana sığdır
-  const x0=P(0,H)[0],x1=P(W,0)[0],y0=-4.8*U,y1=P(W,H)[1]+20,sc=Math.min(vw/(x1-x0+40),(vh-60)/(y1-y0));
-  ctx.save();ctx.translate(vw/2,(vh-50)/2);ctx.scale(sc,sc);ctx.translate(-(x0+x1)/2,-(y0+y1)/2);
+function frame(){
+  const T=nowT();NOW=T*1000;curT=T;
+  chars.forEach((c,i)=>place(c,c.h??i,T));
+  ctx.fillStyle='#0d0b12';ctx.fillRect(0,0,SW,SH);
+  const x0=P(0,H)[0],x1=P(W,0)[0],y0=-4.8*U,y1=P(W,H)[1]+20,sc=Math.min(SW/(x1-x0+40),SH/(y1-y0));
+  ctx.save();ctx.translate(SW/2,SH/2);ctx.scale(sc,sc);ctx.translate(-(x0+x1)/2,-(y0+y1)/2);
   drawRoom();
   const list=solids.map(s=>({k:s.x+s.y,f:s.draw}));chars.forEach(c=>list.push({k:c.x+c.y,f:()=>drawChar(c)}));
   list.sort((a,b)=>a.k-b.k).forEach(o=>o.f());
+  chars.forEach(drawBubble);
   ctx.globalCompositeOperation='lighter';
   for(const [bx,by] of braz){const p=P(bx,by,1.2),g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],160);g.addColorStop(0,'rgba(255,140,40,.22)');g.addColorStop(1,'rgba(255,140,40,0)');ctx.fillStyle=g;ctx.fillRect(p[0]-160,p[1]-160,320,320)}
   ctx.restore();requestAnimationFrame(frame);
 }
-document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Devam et':'Duraklat'};
 buildRoster().then(r=>{
-  chars=r.map(spawn);
-  document.getElementById('names').innerHTML=r.map(c=>`<span>${c.name}</span>`).join('');
+  applyStage();
+  chars=r.map(d=>({...d,x:0,y:0,t:0,moving:false,face:{back:false,sx:0,dir:0}}));
   if(!r.length)msg.textContent='Karakter bulunamadı: characters.json veya builtin-characters.js ekle.';
-  requestAnimationFrame(frame);
+  requestAnimationFrame(frame);connect();
 });
 </script></body></html>

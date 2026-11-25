@@ -15,6 +15,12 @@
       if (!f.back) { c.fillStyle = '#263044'; c.fillRect(-5 + f.sx * 2, -39 - b, 3, 3); c.fillRect(2 + f.sx * 2, -39 - b, 3, 3); }
     }
   });
+  // Canlı yayında her izleyici için 'look' sayısından rastgele ama sabit bir görünüm üretir.
+  const pick = (a, n) => a[Math.abs(n) % a.length];
+  window.makeRandomBuiltin = (look, name) => mk(name, `hsl(${Math.abs(look) % 360},70%,55%)`,
+    pick(['#f2c9a5', '#d9a47e', '#f0c5a2', '#b97d5c', '#8d5a3b', '#fbdcc0'], look >> 4),
+    pick(['#493b3b', '#2b2220', '#7a3b2e', '#1c1c1c', '#c9a227', '#8a8a8a'], look >> 9),
+    pick(['#30394d', '#3b3f57', '#33304a', '#3a4030', '#4a3a30'], look >> 14));
   window.BUILTIN_CHARACTERS = [
     mk('Miso', '#f97316', '#f2c9a5', '#493b3b', '#30394d'),
     mk('Piko', '#38bdf8', '#d9a47e', '#2b2220', '#3b3f57'),
