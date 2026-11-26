@@ -6,7 +6,7 @@ const PORT = +process.env.PORT || 8080;
 const USER = (process.env.TIKTOK_USERNAME || '').replace(/^@/, '');
 const DEMO = process.env.DEMO === '1';
 const MAX = +process.env.MAX_CHARACTERS || 40;      // odada aynı anda en fazla karakter
-const IDLE_MS = 15 * 60e3;                          // bu kadar sessiz kalan karakter odadan çıkar
+const IDLE_MS = (+process.env.IDLE_SECONDS || 180) * 1000; // yazma/beğeni/hediye/giriş olmadan bu kadar geçen karakter odadan çıkar
 const SEED = +process.env.SEED || 2026;
 const BUBBLE_MS = 6000;
 
@@ -50,8 +50,9 @@ function startTikTok() {
   const U = d => d.user || d;
   conn.on(ev('CHAT', 'chat'), d => { const u = U(d); onChat(u.uniqueId, u.nickname || u.uniqueId, d.comment); });
   conn.on(ev('MEMBER', 'member'), d => { const u = U(d); touch(u.uniqueId, u.nickname || u.uniqueId); });
+  conn.on(ev('LIKE', 'like'), d => { const u = U(d); touch(u.uniqueId, u.nickname || u.uniqueId); }); // etkinlik say, karakter silinmesin
   conn.on(ev('GIFT', 'gift'), d => { const u = U(d); if (!touch(u.uniqueId, u.nickname || u.uniqueId)) return;
-    bc({ type: 'gift', id: u.uniqueId, gift: d.giftName || (d.giftDetails && d.giftDetails.giftName) || 'gift', count: d.repeatCount || 1, t: now() }); });
+    bc({ type: 'gift', id: u.uniqueId, gift: d.giftName || (d.giftDetails && d.giftDetails.giftName) || 'gift', count: d.repeatCount || 1, diamonds: d.diamondCount || (d.giftDetails && d.giftDetails.diamondCount) || 0, t: now() }); });
   conn.on(ev('ERROR', 'error'), e => console.error('TikTok hata:', e && e.message || e));
   let retry = null;
   const go = () => conn.connect().then(s => console.log('TikTok bağlandı: oda', s.roomId)).catch(e => { console.error('Bağlanamadı (yayın açık mı?):', e.message || e); retry = setTimeout(go, 15e3); });

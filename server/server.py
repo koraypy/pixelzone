@@ -4,13 +4,14 @@ Canlı:    set TIKTOK_USERNAME=kullaniciadin  &  python server.py      (PowerShe
 Deneme:   set DEMO=1  &  python server.py
 """
 import asyncio, json, os, random, time
-import websockets
+import websockets, logging
+logging.getLogger("websockets").setLevel(logging.CRITICAL)  # WebSocket olmayan istekler (tarayıcıdan açma, tünel kontrolü) log kirletmesin
 
 PORT = int(os.getenv("PORT", "8080"))
 USER = os.getenv("TIKTOK_USERNAME", "").lstrip("@")
 DEMO = os.getenv("DEMO") == "1"
 MAX = int(os.getenv("MAX_CHARACTERS", "40"))
-IDLE = 15 * 60
+IDLE = int(os.getenv("IDLE_SECONDS", "180"))  # sessiz kalan karakter bu kadar sn sonra çıkar
 SEED = int(os.getenv("SEED", "2026"))
 BUBBLE = 6.0
 
@@ -83,7 +84,7 @@ async def demo():
 
 async def tiktok():
     from TikTokLive import TikTokLiveClient
-    from TikTokLive.events import CommentEvent, JoinEvent, GiftEvent
+    from TikTokLive.events import CommentEvent, JoinEvent, GiftEvent, LikeEvent
     client = TikTokLiveClient(unique_id="@" + USER)
     nm = lambda u: getattr(u, "nickname", None) or getattr(u, "unique_id", None)
 
@@ -95,11 +96,15 @@ async def tiktok():
     async def _join(e):
         await touch(e.user.unique_id, nm(e.user))
 
+    @client.on(LikeEvent)
+    async def _like(e):
+        await touch(e.user.unique_id, nm(e.user))
+
     @client.on(GiftEvent)
     async def _gift(e):
         if await touch(e.user.unique_id, nm(e.user)):
             await bc({"type": "gift", "id": e.user.unique_id, "gift": getattr(e.gift, "name", "gift"),
-                      "count": getattr(e, "repeat_count", 1), "t": now()})
+                      "count": getattr(e, "repeat_count", 1), "diamonds": getattr(e.gift, "diamond_count", 0), "t": now()})
 
     while True:  # yayın kapalıysa/koparsa yeniden dene
         try:
