@@ -40,3 +40,25 @@ Adresi sabitlemek için `characters.json` içinde `"server": "wss://..."` yaz (`
 ## Sıradaki adımlar için hazır noktalar
 - Bağış: sunucu `{type:'gift', id, gift, count}` yayınlar; istemcide `handle()` içinde `gift` dalı eylem eklemek için hazır.
 - Her olay sunucu zamanıyla damgalı; herkes aynı anda aynı olayı görür.
+
+## Windows / Python alternatifi
+Node yerine Python da kullanabilirsin (aynı protokol, site değişmez):
+```
+pip install TikTokLive websockets
+set TIKTOK_USERNAME=kullaniciadin
+python server\server.py
+```
+(PowerShell: `$env:TIKTOK_USERNAME="kullaniciadin"; python server\server.py`) · Deneme: `set DEMO=1`
+Tünel için Windows'ta `cloudflared.exe tunnel --url http://localhost:8080`.
+
+## Telefondan açınca
+- Telefonda `localhost` telefonun kendisidir; bilgisayardaki sunucuya bağlanamaz. Tünel adresini (`wss://xxx.trycloudflare.com`) kullan.
+- `https` sayfa `ws://` adrese bağlanamaz; mutlaka `wss://`.
+- Sorun varsa adresin sonuna `&debug` ekle (ör. `?server=wss://...&debug`): bağlantı durumu ve hata ekranda yazar.
+
+## Çıkan karakterler ve hediyeler
+- TikTok "çıktı" olayı vermediği için karakter, **180 sn** (`IDLE_SECONDS`) boyunca yazma/beğeni/hediye/giriş yapmazsa 1 sn'de silinip kaybolur.
+  Daha hızlı silinsin istersen sunucuyu `IDLE_SECONDS=60` ile başlat.
+- **Hediyeler:** Gül (Rose) atan kişinin balonu pembe vurgulu olur, anında "🌹 Gül" balonu çıkar,
+  sonraki mesajları da 120 sn boyunca vurgulu kalır, ismi de pembeleşir. Başka hediyeler altın renkli.
+  Yeni hediye stili için `index.html` içindeki `GIFT_STYLES` listesine satır ekle (anahtar: hediye adı, küçük harf).

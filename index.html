@@ -12,6 +12,10 @@ canvas{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(
 <script>
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),msg=document.getElementById('msg');
 const W=22,H=16,TW=64,TH=32,U=34;
+const DEBUG=new URLSearchParams(location.search).has('debug');
+const status=t=>{if(DEBUG)msg.textContent=t};
+addEventListener('error',e=>{if(DEBUG)msg.textContent='Hata: '+e.message});
+if(!CanvasRenderingContext2D.prototype.roundRect)CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){r=Math.min(r,w/2,h/2);this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath()};
 const ASSETS={sprites:[],server:''};
 let SW=1280,SH=720,SEED=2026,NOW=0,curT=0; // sahne boyutu herkes için sabit
 function applyStage(){cv.width=SW;cv.height=SH;document.documentElement.style.setProperty('--ar',SW+'/'+SH)}
@@ -110,7 +114,7 @@ function place(c,ci,T){
   c.face.dir=Math.abs(sx)>Math.abs(sy)?(sx<0?1:2):(sy<0?3:0);
 }
 function drawChar(c){
-  const p=P(c.x,c.y);ctx.globalAlpha=c.joinedAt?Math.max(0,Math.min(1,(curT*1000-c.joinedAt)/800)):1;
+  const p=P(c.x,c.y);ctx.globalAlpha=(c.joinedAt?Math.max(0,Math.min(1,(curT*1000-c.joinedAt)/800)):1)*(c.leaving?Math.max(0,1-(curT-c.leaving)):1);
   ctx.fillStyle='rgba(0,0,0,.4)';ctx.beginPath();ctx.ellipse(p[0],p[1],12,6,0,0,7);ctx.fill();
   ctx.save();ctx.translate(p[0],p[1]);
   if(c.builtin)c.builtin.draw(ctx,c.t,c.face,c.moving);
@@ -119,7 +123,7 @@ function drawChar(c){
     ctx.imageSmoothingEnabled=false;ctx.drawImage(s.img,col*s.fw,row*s.fh,s.fw,s.fh,-w/2,-h,w,h);
   }
   ctx.restore();
-  ctx.font='bold 11px Georgia';ctx.textAlign='center';ctx.fillStyle='#fff';ctx.strokeStyle='#000a';ctx.lineWidth=3;
+  ctx.font='bold 11px Georgia';ctx.textAlign='center';ctx.fillStyle=c.style&&curT<c.style.until?c.style.border:'#fff';ctx.strokeStyle='#000a';ctx.lineWidth=3;
   const ny=p[1]-(c.sprite?c.sprite.fh*c.sprite.scale:52)-6;ctx.strokeText(c.name,p[0],ny);ctx.fillText(c.name,p[0],ny);ctx.globalAlpha=1;
 }
 function wrap(s,mw){const out=[];let cur='';for(const ch of s){if(ctx.measureText(cur+ch).width>mw&&cur){out.push(cur);cur=ch.trim()?ch:''}else cur+=ch}if(cur)out.push(cur);if(out.length>3){out.length=3;out[2]=out[2].slice(0,-1)+'…'}return out}
@@ -127,14 +131,25 @@ function drawBubble(c){
   const b=c.bubble;if(!b||curT>b.until)return;
   const p=P(c.x,c.y),bottom=p[1]-(c.sprite?c.sprite.fh*c.sprite.scale:52)-22;
   ctx.font='12px Georgia';const L=wrap(b.text,150),w=Math.max(...L.map(l=>ctx.measureText(l).width))+14,h=L.length*15+10,x=p[0]-w/2,y=bottom-h;
-  ctx.globalAlpha=Math.min(1,(b.until-curT)/.5);ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(x,y,w,h,8);ctx.fill();
+  const st=b.style;ctx.globalAlpha=(c.leaving?Math.max(0,1-(curT-c.leaving)):1)*Math.min(1,(b.until-curT)/.5);ctx.fillStyle=st?st.bg:'#fff';
+  if(st){ctx.shadowColor=st.border;ctx.shadowBlur=12}
+  ctx.beginPath();ctx.roundRect(x,y,w,h,8);ctx.fill();ctx.shadowBlur=0;
+  if(st){ctx.strokeStyle=st.border;ctx.lineWidth=2;ctx.stroke()}
   ctx.beginPath();ctx.moveTo(p[0]-5,y+h);ctx.lineTo(p[0]+5,y+h);ctx.lineTo(p[0],y+h+7);ctx.fill();
-  ctx.fillStyle='#111';ctx.textAlign='center';L.forEach((l,i)=>ctx.fillText(l,p[0],y+14+i*15));ctx.globalAlpha=1;
+  ctx.fillStyle=st?st.text:'#111';ctx.textAlign='center';L.forEach((l,i)=>ctx.fillText(l,p[0],y+14+i*15));ctx.globalAlpha=1;
 }
 // ---- Canlı bağlantı (sunucu varsa): karakterler izleyicilerden gelir, saat sunucudan ----
 let offset=0,bestRtt=1e9,ws=null;const byId=new Map();
 const nowT=()=>(Date.now()+offset)/1000;
 function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h|0}
+// Hediye stilleri: anahtar = hediye adı (küçük harf). Yeni hediye eklemek için bir satır yeter.
+const GIFT_STYLES={
+  rose:{label:'Gül',icon:'🌹',bg:'#ffd6e8',border:'#ff3d94',text:'#7a0a3d'},
+  default:{label:'',icon:'🎁',bg:'#fff1c2',border:'#f5a623',text:'#5a3b00'}
+};
+const GIFT_HIGHLIGHT=120; // sn: hediye sonrası balonlar bu süre vurgulu kalır
+const giftStyle=n=>GIFT_STYLES[String(n).toLowerCase()]||{...GIFT_STYLES.default,label:n};
+let ghosts=[];
 const FALLBACK={draw(c,t,f,m){c.fillStyle='#8a8aa0';c.fillRect(-9,-30,18,20);c.fillRect(-7,-46,14,14);c.fillRect(-7,-10,5,10);c.fillRect(2,-10,5,10)}};
 function makeDef(u){
   const d={id:u.id,name:u.name,h:hashStr(u.id),joinedAt:u.joinedAt,bubble:null,x:0,y:0,t:0,moving:false,face:{back:false,sx:0,dir:0}};
@@ -142,22 +157,22 @@ function makeDef(u){
   else d.builtin=window.makeRandomBuiltin?makeRandomBuiltin(u.look|0,u.name):FALLBACK;
   return d;
 }
-function setChat(m){const c=byId.get(m.id);if(c)c.bubble={text:m.text,until:m.t/1000+6}}
+function setChat(m){const c=byId.get(m.id);if(c)c.bubble={text:m.text,until:m.t/1000+6,style:c.style&&m.t/1000<c.style.until?c.style:null}}
 function handle(m){
-  if(m.type==='hello'){SEED=m.seed;legs.clear();offset=m.t-Date.now();byId.clear();m.roster.forEach(u=>byId.set(u.id,makeDef(u)));m.chats.forEach(setChat)}
+  if(m.type==='hello'){SEED=m.seed;legs.clear();ghosts=[];offset=m.t-Date.now();byId.clear();m.roster.forEach(u=>byId.set(u.id,makeDef(u)));m.chats.forEach(setChat)}
   else if(m.type==='join'){byId.set(m.user.id,makeDef(m.user))}
-  else if(m.type==='leave'){byId.delete(m.id)}
+  else if(m.type==='leave'){const c=byId.get(m.id);if(c){c.leaving=nowT();ghosts.push(c);byId.delete(m.id)}}
   else if(m.type==='chat'){setChat(m)}
   else if(m.type==='pong'){const rtt=Date.now()-m.c;if(rtt<=bestRtt){bestRtt=rtt;offset=m.t+rtt/2-Date.now()}}
-  else if(m.type==='gift'){console.log('gift',m)} // bağış → eylem entegrasyonu için hazır nokta
-  if(m.type!=='pong'&&m.type!=='gift')chars=[...byId.values()];
+  else if(m.type==='gift'){const c=byId.get(m.id);if(c){const st=giftStyle(m.gift);c.style={...st,until:m.t/1000+GIFT_HIGHLIGHT};c.bubble={text:st.icon+' '+(m.count>1?m.count+'x ':'')+(st.label||m.gift),until:m.t/1000+6,style:st}}}
+  if(m.type!=='pong'&&m.type!=='gift')chars=[...byId.values(),...ghosts];
 }
 function connect(){
   const url=new URLSearchParams(location.search).get('server')||ASSETS.server;if(!url)return;
-  try{ws=new WebSocket(url)}catch(e){return}
-  ws.onopen=()=>{bestRtt=1e9;ws.send(JSON.stringify({type:'ping',c:Date.now()}))};
+  status('Bağlanılıyor: '+url);try{ws=new WebSocket(url)}catch(e){status('Bağlantı engellendi: '+e.message);return}
+  ws.onopen=()=>{status('Sunucuya bağlandı');bestRtt=1e9;ws.send(JSON.stringify({type:'ping',c:Date.now()}))};
   ws.onmessage=e=>{try{handle(JSON.parse(e.data))}catch(err){console.warn(err)}};
-  ws.onclose=()=>setTimeout(connect,3000);
+  ws.onclose=()=>{status('Sunucuya bağlanılamadı: '+url);setTimeout(connect,3000)};
 }
 setInterval(()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'ping',c:Date.now()}))},10000);
 function drawRoom(){
@@ -171,8 +186,10 @@ function drawRoom(){
   for(const bx of [7.5,14.5])poly([P(bx-.4,0,1.2),P(bx+.4,0,1.2),P(bx+.4,0,4.2),P(bx,0,3.7),P(bx-.4,0,4.2)],'#8a1c2b','#c9a227');
   poly([P(0,H,0),P(W,H,0),P(W,H,.25),P(0,H,.25)],'#5a5468');poly([P(W,0,0),P(W,H,0),P(W,H,.25),P(W,0,.25)],'#5a5468');
 }
-function frame(){
+function render(){
+  ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
   const T=nowT();NOW=T*1000;curT=T;
+  if(ghosts.length){ghosts=ghosts.filter(g=>T-g.leaving<1);chars=[...byId.values(),...ghosts]}
   chars.forEach((c,i)=>place(c,c.h??i,T));
   ctx.fillStyle='#0d0b12';ctx.fillRect(0,0,SW,SH);
   const x0=P(0,H)[0],x1=P(W,0)[0],y0=-4.8*U,y1=P(W,H)[1]+20,sc=Math.min(SW/(x1-x0+40),SH/(y1-y0));
@@ -183,8 +200,9 @@ function frame(){
   chars.forEach(drawBubble);
   ctx.globalCompositeOperation='lighter';
   for(const [bx,by] of braz){const p=P(bx,by,1.2),g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],160);g.addColorStop(0,'rgba(255,140,40,.22)');g.addColorStop(1,'rgba(255,140,40,0)');ctx.fillStyle=g;ctx.fillRect(p[0]-160,p[1]-160,320,320)}
-  ctx.restore();requestAnimationFrame(frame);
+  ctx.restore();
 }
+function frame(){try{render()}catch(e){status('Hata: '+e.message);console.error(e)}requestAnimationFrame(frame)}
 buildRoster().then(r=>{
   applyStage();
   chars=r.map(d=>({...d,x:0,y:0,t:0,moving:false,face:{back:false,sx:0,dir:0}}));
